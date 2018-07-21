@@ -6,6 +6,7 @@ var expect      = require('chai').expect;
 var logger      = require('morgan');
 var cors        = require('cors');
 const csp       = require('helmet-csp');
+const mongo     = require('mongodb').MongoClient;
 
 // Enable .env variables to be used
 require('dotenv').config();
@@ -55,15 +56,23 @@ app.route('/')
 //For FCC testing purposes
 fccTestingRoutes(app);
 
-//Routing for API
-apiRoutes(app);
+mongo.connect(process.env.DB, (err, db) => {
+  if (err) {
+    console.log('Database error: ' + err);
+  } else {
+    console.log('Successful database connection');
 
-//404 Not Found Middleware
-app.use(function(req, res, next) {
-  res
-    .status(404)
-    .type('text')
-    .send('Not Found');
+    //Routing for API
+    apiRoutes(app, db);
+    
+    //404 Not Found Middleware
+    app.use(function(req, res, next) {
+      res
+        .status(404)
+        .type('text')
+        .send('Not Found');
+    });
+  }
 });
 
 //Start our server and tests!

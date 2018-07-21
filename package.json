@@ -9,6 +9,7 @@
 		"test": "NODE_ENV=test nodemon server.js"
 	},
 	"dependencies": {
+		"async": "^2.6.1",
 		"axios": "^0.18.0",
 		"body-parser": "^1.15.2",
 		"chai": "^3.5.0",

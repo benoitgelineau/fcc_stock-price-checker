@@ -16,10 +16,11 @@ module.exports = function (app, db) {
   app.route('/api/stock-prices')
     .get(function (req, res){
       const symbol = req.query.stock;
+      const collection = db.collection('stocks');
       
       const getStock = async symbol => {
         const url = `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${symbol}&interval=1min&apikey=${process.env.API_KEY}`;
-
+        
         try {
           return await axios.get(url);
         } catch (error) {
@@ -27,86 +28,72 @@ module.exports = function (app, db) {
         }
       };
 
-      /** HANDLE ONE STOCK */
-      // const displayStock = async symbol => {
+      const displayStock = symbol => {
 
-      //   setVariables(symbol)
-      //     .then(value => {
-      //       findAndRender(value.stock, value.price, value.like, value.count, value.ip);
-      //     })
-        
-      // };
+        if (typeof symbol === 'string') {
 
-      /** HANDLE TWO STOCKS */
-      const displayStock = async (symbolOne, symbolTwo) => {
-
-        const collection = db.collection('stocks');
-
-        const promises = [setVariables(symbolOne), setVariables(symbolTwo)];
-        
-        Promise.all(promises)
-          .then(values => {
-            async.parallel(
-              {
-                one: function(callback) {
-                  collection.findOne({ stock: values[0].stock, ips: { $in: [values[0].ip] } }, callback);
-                },
-                two: function(callback) {
-                  collection.findOne({ stock: values[1].stock, ips: { $in: [values[1].ip] } }, callback);
-                }
-              },
-              (err, results) => {
-                if (err) console.log('findOne error: ' + err);
-                
-                const updatesOne = setUpdates(results.one, values[0].stock, values[0].like, values[0].ip, values[0].count);
-                const updatesTwo = setUpdates(results.two, values[1].stock, values[1].like, values[1].ip, values[1].count);
-
-                async.parallel(
-                  {
-                    one: function(callback) {
-                      collection.findAndModify({ stock: values[0].stock }, {}, updatesOne, { upsert: true, new: true }, callback);
-                    },
-                    two: function(callback) {
-                      collection.findAndModify({ stock: values[1].stock }, {}, updatesTwo, { upsert: true, new: true }, callback);
-                    }
-                  },
-                  (err, data) => {
-                    if (err) console.log('findAndModify error: ' + err);
-
-                    res.json({
-                      stockData: [
-                        {
-                          stock: data.one.value.stock,
-                          price: values[0].price,
-                          rel_likes:
-                            data.one.value.likes - data.two.value.likes
-                        },
-                        {
-                          stock: data.two.value.stock,
-                          price: values[1].price,
-                          rel_likes:
-                            data.two.value.likes - data.one.value.likes
-                        }
-                      ]
-                    });
-                  }
-                );
-              }
-            );
-          })
-          .catch(function(err) {
-            console.log(err);
+          setVariables(symbol).then(value => {
+            handleOneStock(value.stock, value.price, value.like, value.count, value.ip);
           });
+
+        } else {
+          const promises = [setVariables(symbol[0]), setVariables(symbol[1])];
+          
+          Promise.all(promises)
+            .then(values => {
+              async.parallel(
+                {
+                  one: function(callback) {
+                    collection.findOne({ stock: values[0].stock, ips: { $in: [values[0].ip] } }, callback);
+                  },
+                  two: function(callback) {
+                    collection.findOne({ stock: values[1].stock, ips: { $in: [values[1].ip] } }, callback);
+                  }
+                },
+                (err, results) => {
+                  if (err) console.log('findOne error: ' + err);
+                  
+                  const updatesOne = setUpdates(results.one, values[0].stock, values[0].like, values[0].ip, values[0].count);
+                  const updatesTwo = setUpdates(results.two, values[1].stock, values[1].like, values[1].ip, values[1].count);
+  
+                  async.parallel(
+                    {
+                      one: function(callback) {
+                        collection.findAndModify({ stock: values[0].stock }, {}, updatesOne, { upsert: true, new: true }, callback);
+                      },
+                      two: function(callback) {
+                        collection.findAndModify({ stock: values[1].stock }, {}, updatesTwo, { upsert: true, new: true }, callback);
+                      }
+                    },
+                    (err, data) => {
+                      if (err) console.log('findAndModify error: ' + err);
+  
+                      res.json({
+                        stockData: [
+                          {
+                            stock: data.one.value.stock,
+                            price: values[0].price,
+                            rel_likes:
+                              data.one.value.likes - data.two.value.likes
+                          },
+                          {
+                            stock: data.two.value.stock,
+                            price: values[1].price,
+                            rel_likes:
+                              data.two.value.likes - data.one.value.likes
+                          }
+                        ]
+                      });
+                    }
+                  );
+                }
+              );
+            })
+            .catch(err => console.log(err));
+        }
       };
 
-      // if (typeof symbol === 'string') {
-      //   displayOneStock(symbol);
-      // } else {
-      //   displayTwoStocks(symbol[0], symbol[1]);
-      // }
-
-      // displayStock(symbol);
-      displayStock(symbol[0], symbol[1]);
+      displayStock(symbol);
 
       async function setVariables(symbol) {
         const api = await getStock(symbol);
@@ -121,9 +108,8 @@ module.exports = function (app, db) {
         }
       }
 
-      function findAndRender(stock, price, like, count, ip) {
+      function handleOneStock(stock, price, like, count, ip) {
 
-        const collection = db.collection('stocks');
         // No 'likes' incrementation if IP in ips array
         collection.findOne(
           {
